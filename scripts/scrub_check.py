@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import re
 import sys
+from collections.abc import Iterator
 from pathlib import Path
 
 # Patterns that must never appear in the working tree.
@@ -68,7 +69,7 @@ TEXT_SUFFIXES = {
 SELF = Path(__file__).resolve()
 
 
-def iter_files(root: Path):
+def iter_files(root: Path) -> Iterator[Path]:
     """Yield candidate text files under ``root``, skipping noise dirs."""
     for path in root.rglob("*"):
         if not path.is_file():

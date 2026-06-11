@@ -23,6 +23,75 @@ Public surface (to be filled in as the core lands):
     - judge: optional model-assisted scoring
 """
 
-__version__ = "0.0.0"
+from redcell.adapters import (
+    Adapter,
+    AgentLoopAdapter,
+    McpAdapter,
+    OpenAIEndpointAdapter,
+    Probe,
+    build_probe,
+)
+from redcell.corpus_loader import (
+    AttackCase,
+    Corpus,
+    CorpusError,
+    DeliveryVector,
+    OracleSpec,
+    load_corpus,
+)
+from redcell.judge import JUDGE_SYSTEM_PROMPT, Judge, JudgeStatus, JudgeVerdict
+from redcell.oracles import (
+    CanaryExfiltrationOracle,
+    ForbiddenToolOracle,
+    Oracle,
+    OracleResult,
+    PredicateOracle,
+    build_oracle,
+)
+from redcell.types import (
+    ASI_TITLES,
+    MVP_CATEGORIES,
+    AgentResponse,
+    AsiCategory,
+    Severity,
+    ToolCall,
+)
 
-__all__ = ["__version__"]
+__version__ = "0.1.0"
+
+__all__ = [
+    "__version__",
+    # types
+    "AgentResponse",
+    "ToolCall",
+    "Severity",
+    "AsiCategory",
+    "ASI_TITLES",
+    "MVP_CATEGORIES",
+    # oracles
+    "Oracle",
+    "OracleResult",
+    "CanaryExfiltrationOracle",
+    "ForbiddenToolOracle",
+    "PredicateOracle",
+    "build_oracle",
+    # corpus
+    "AttackCase",
+    "Corpus",
+    "CorpusError",
+    "DeliveryVector",
+    "OracleSpec",
+    "load_corpus",
+    # adapters
+    "Adapter",
+    "Probe",
+    "build_probe",
+    "OpenAIEndpointAdapter",
+    "AgentLoopAdapter",
+    "McpAdapter",
+    # judge
+    "Judge",
+    "JudgeVerdict",
+    "JudgeStatus",
+    "JUDGE_SYSTEM_PROMPT",
+]
