@@ -95,6 +95,24 @@ class AttackCase(BaseModel):
     title: str = Field(default="", description="Short human-readable name.")
     description: str = Field(default="", description="What the case probes for.")
     tags: list[str] = Field(default_factory=list)
+    ambiguous: bool = Field(
+        default=False,
+        description=(
+            "Mark a case whose verdict a deterministic oracle cannot decide "
+            "soundly (e.g. 'did it *subtly* comply?'). When set, and only when a "
+            "judge endpoint is configured, the runner consults the optional judge "
+            "and records its verdict as ADVISORY evidence -- it never overrides "
+            "the oracle's deterministic result."
+        ),
+    )
+    probe_intent: str = Field(
+        default="",
+        description=(
+            "A one-line description of the unsafe behavior this case tests for, "
+            "passed to the judge for ambiguous cases. Falls back to the title / "
+            "description when empty."
+        ),
+    )
 
     @field_validator("tags")
     @classmethod

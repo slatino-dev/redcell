@@ -55,6 +55,15 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         help="vulnagent (offline, 3 levels) or openai (your endpoint).",
     )
     p.add_argument("--model", default=None, help="Model id for the openai adapter.")
+    p.add_argument(
+        "--judge",
+        action="store_true",
+        help=(
+            "Consult the optional model-judge on cases flagged 'ambiguous' "
+            "(advisory only; uses OPENAI_BASE_URL / OPENAI_JUDGE_MODEL). The "
+            "judge never overrides a deterministic oracle verdict."
+        ),
+    )
     return p.parse_args(argv)
 
 
@@ -83,11 +92,14 @@ def _run_vulnagent(corpus_dir: str, out_dir: Path, trials: int) -> int:
     return 0
 
 
-def _run_openai(corpus_dir: str, out_dir: Path, trials: int, model: str | None) -> int:
+def _run_openai(
+    corpus_dir: str, out_dir: Path, trials: int, model: str | None, use_judge: bool
+) -> int:
     if not model:
         print("--adapter openai requires --model (and OPENAI_BASE_URL in the env).")
         return 2
     from redcell.adapters import Adapter, OpenAIEndpointAdapter  # noqa: PLC0415
+    from redcell.judge import Judge  # noqa: PLC0415
 
     corpus = load_corpus(corpus_dir)
     tools = _default_tool_schema()
@@ -95,9 +107,15 @@ def _run_openai(corpus_dir: str, out_dir: Path, trials: int, model: str | None) 
     def factory(_ctx: TrialContext) -> Adapter:
         return OpenAIEndpointAdapter(model=model, tools=tools)
 
+    judge = Judge() if use_judge else None
+    if use_judge and not (judge and judge.available):
+        print("--judge set but no OPENAI_BASE_URL configured; ambiguous cases -> needs-review.")
+
     label = f"openai-{model}".replace("/", "_")
     try:
-        result = run_corpus(corpus, factory, RunConfig(trials=trials, target_label=label))
+        result = run_corpus(
+            corpus, factory, RunConfig(trials=trials, target_label=label, judge=judge)
+        )
     except ValueError as exc:  # missing OPENAI_BASE_URL
         print(f"openai adapter not configured: {exc}")
         return 2
@@ -135,7 +153,7 @@ def main(argv: list[str] | None = None) -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
     if args.adapter == "vulnagent":
         return _run_vulnagent(args.corpus, out_dir, args.trials)
-    return _run_openai(args.corpus, out_dir, args.trials, args.model)
+    return _run_openai(args.corpus, out_dir, args.trials, args.model, args.judge)
 
 
 if __name__ == "__main__":

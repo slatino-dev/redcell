@@ -250,6 +250,12 @@ def _render_trial_block(trial: Any) -> list[str]:
         mode = trial.evidence.get("mode", "")
         if mode:
             block.append(f"    - evidence mode: `{mode}`")
+    judge = getattr(trial, "judge", None)
+    if judge is not None:
+        block.append(
+            f"    - judge (advisory): **{judge.status.value}** "
+            f"(available={judge.available}, confidence={judge.confidence:.2f})"
+        )
     return block
 
 

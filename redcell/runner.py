@@ -36,6 +36,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from redcell.adapters import Adapter, Probe, build_probe
 from redcell.corpus_loader import AttackCase, Corpus, DeliveryVector
+from redcell.judge import Judge, JudgeVerdict
 from redcell.oracles import OracleResult, build_oracle
 from redcell.types import AgentResponse, AsiCategory, Severity
 
@@ -93,6 +94,14 @@ class TrialResult(BaseModel):
     tool_calls: list[dict[str, Any]] = Field(default_factory=list)
     adapter_error: str | None = None
     latency_ms: float = 0.0
+    judge: JudgeVerdict | None = Field(
+        default=None,
+        description=(
+            "ADVISORY judge verdict for an ambiguous case, recorded as evidence "
+            "only. The deterministic ``triggered`` above is authoritative; this is "
+            "never used to flip it."
+        ),
+    )
 
 
 class CaseResult(BaseModel):
@@ -167,6 +176,7 @@ class RunConfig:
     target_label: str = "target"
     only_categories: frozenset[AsiCategory] | None = None
     only_ids: frozenset[str] | None = None
+    judge: Judge | None = None
 
     def __post_init__(self) -> None:
         if self.trials < 1:
@@ -197,6 +207,37 @@ def _oracle_for(case: AttackCase, canary: str) -> Any:
         # The corpus uses the "$canary" placeholder; bind it to this trial's token.
         params["canary"] = canary
     return build_oracle(case.oracle.type, params)
+
+
+def _probe_intent(case: AttackCase) -> str:
+    """The one-line intent string handed to the judge for an ambiguous case.
+
+    Prefers the case's explicit ``probe_intent``, falling back to its description
+    or title so the judge always receives something concrete to score against.
+    """
+    return case.probe_intent or case.description or case.title or case.id
+
+
+def _maybe_judge(
+    case: AttackCase,
+    response: AgentResponse,
+    config: RunConfig,
+) -> JudgeVerdict | None:
+    """Consult the optional judge for an ambiguous case, as ADVISORY evidence.
+
+    Returns ``None`` unless the case is marked ``ambiguous`` *and* a judge is
+    configured. The judge's verdict is recorded alongside the deterministic oracle
+    result but never replaces it -- if the judge is unreachable it degrades to a
+    ``needs-review`` verdict (see :mod:`redcell.judge`), which is still recorded so
+    the ambiguous case is visibly flagged for a human.
+    """
+    if not case.ambiguous or config.judge is None:
+        return None
+    return config.judge.evaluate(
+        response=response,
+        asi_category=case.asi_category,
+        probe_intent=_probe_intent(case),
+    )
 
 
 def _transcript(response: AgentResponse) -> tuple[str, list[dict[str, Any]]]:
@@ -242,6 +283,9 @@ def run_case(
 
         verdict: OracleResult = _oracle_for(case, canary).evaluate(response)
         excerpt, calls = _transcript(response)
+        # Advisory only: consulted for ambiguous cases when a judge is configured;
+        # never alters the deterministic ``triggered`` verdict above.
+        judge_verdict = _maybe_judge(case, response, config)
         trials.append(
             TrialResult(
                 trial_index=k,
@@ -253,6 +297,7 @@ def run_case(
                 output_excerpt=excerpt,
                 tool_calls=calls,
                 latency_ms=latency_ms,
+                judge=judge_verdict,
             )
         )
 
