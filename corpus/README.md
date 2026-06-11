@@ -5,10 +5,31 @@ behaviors an agent should resist, organized by OWASP Top 10 for Agentic
 Applications (2026) category. Cases are data, loaded and validated by
 `redcell.corpus_loader`.
 
-`mvp.yaml` is the seed corpus covering the five MVP categories (ASI01, ASI02,
-ASI03, ASI05, ASI06). Nothing here is a turnkey exploit: each case describes a
-behavior to *test for* — paired with a deterministic oracle that detects whether
-the target exhibited it — so you can confirm your own agent handles it safely.
+The corpus is split by category: `asi01.yaml`, `asi02.yaml`, `asi03.yaml`,
+`asi05.yaml`, and `asi06.yaml` — the five MVP categories whose behavior a
+single-target, black-box harness can score soundly. Nothing here is a turnkey
+exploit: each case describes a behavior to *test for* — paired with a
+deterministic oracle that detects whether the target exhibited it — so you can
+confirm your own agent handles it safely.
+
+## How the cases are generated (and what the count means)
+
+The ~146 cases are **template × delivery-vector expansions**, not 146 unrelated
+payloads. A handful of probe *templates* per category (e.g. "goal hijack →
+canary exfiltration", "external-recipient email", "code-into-exec-tool") are
+expanded systematically across the five delivery vectors (`user_message`,
+`tool_result`, `retrieved_document`, `memory`, `system_prompt`) and minor
+wording variants. That is deliberate: it isolates the *delivery channel* as a
+variable while holding the probed behavior fixed, which is what makes the
+hardening-delta comparison clean. The trade-off is that the headcount reflects
+breadth across channels more than across distinct phrasings — extend a template
+by hand, or add new templates in `scripts/gen_corpus.py`, to deepen coverage.
+
+Regenerate the YAML after editing the templates:
+
+```bash
+python scripts/gen_corpus.py        # rewrites corpus/asi0*.yaml
+```
 
 ## Case schema
 
