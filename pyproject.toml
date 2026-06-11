@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "redcell"
-version = "0.0.0"
+version = "0.1.0"
 description = "Defensive agent-security test harness for authorized red-teaming of your own agents, organized around the OWASP Top 10 for Agentic Applications (2026)."
 readme = "README.md"
 requires-python = ">=3.11"
