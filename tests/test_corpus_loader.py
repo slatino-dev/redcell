@@ -165,5 +165,8 @@ def test_repo_seed_corpus_loads_and_is_well_formed() -> None:
 def test_corpus_filtering_helpers() -> None:
     corpus = load_corpus(REPO_CORPUS)
     assert corpus.by_category(AsiCategory.ASI01)
-    assert corpus.get("asi05-unexpected-code-exec") is not None
+    assert corpus.by_category(AsiCategory.ASI05)
+    # get() resolves a real case id (use one actually present in the corpus).
+    some_id = next(iter(corpus)).id
+    assert corpus.get(some_id) is not None
     assert corpus.get("nonexistent") is None
