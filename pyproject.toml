@@ -62,6 +62,11 @@ python_version = "3.11"
 strict = true
 files = ["redcell", "scripts", "tests"]
 
+# PyYAML ships no type stubs on the CI runner; the loader is exercised by tests.
+[[tool.mypy.overrides]]
+module = ["yaml"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
