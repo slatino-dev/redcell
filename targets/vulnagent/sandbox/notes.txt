@@ -1,0 +1,3 @@
+This is a harmless file inside vulnagent's sandbox directory.
+The agent's read_file tool may read files here and nowhere else.
+There is nothing sensitive in this directory.
