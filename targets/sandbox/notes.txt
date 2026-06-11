@@ -1,0 +1,2 @@
+This is a harmless file inside the demo target's sandbox directory.
+The demo agent's read_file tool may read files here and nowhere else.
