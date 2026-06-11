@@ -1,115 +1,49 @@
 #!/usr/bin/env python3
-"""scrub_check — fail if the working tree leaks private infra or secrets.
+"""scrub_check.py - fail (exit 1) if any tracked text file contains a likely
+secret (private keys, cloud / API tokens) or a carrier-grade-NAT address.
 
-This is a defensive gate, run in CI and locally, that scans tracked-style text
-files for identifiers that must never land in a public repo: internal hostnames,
-CGNAT/private network addresses, and API-key-shaped tokens. It exits non-zero and prints
-every offending ``file:line`` so the leak can be removed before commit.
-
-It deliberately scans source/text files only and skips the repo's own VCS and
-build/cache directories. This script is part of redcell's hygiene tooling, not
-its test corpus.
-
-Usage:
-    python scripts/scrub_check.py [ROOT]   # ROOT defaults to repo root
+A lightweight pre-commit / CI guard. Generic by design: it ships no project- or
+host-specific values. Usage: python scripts/scrub_check.py [--path DIR]
 """
-
 from __future__ import annotations
-
-import re
-import sys
-from collections.abc import Iterator
+import re, subprocess, sys
 from pathlib import Path
 
-# Patterns that must never appear in the working tree.
-PATTERNS: list[tuple[str, re.Pattern[str]]] = [
-    ("internal-host", re.compile(r"redacted-host")),
-    ("cgnat-100.64", re.compile(r"\b100\.64\.\d{1,3}\.\d{1,3}\b")),
-    ("private network-domain", re.compile(r"ts\.net")),
-    ("redacted-mesh", re.compile(r"redacted-mesh")),
-    ("hermes-key", re.compile(r"redacted-key")),
-    ("api-key", re.compile(r"sk-[A-Za-z0-9]{20,}")),
+PATTERNS = [
+    ("private-key-block", re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----")),
+    ("aws-access-key-id", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
+    ("github-token", re.compile(r"\bgh[pousr]_[A-Za-z0-9]{36}\b")),
+    ("openai-style-key", re.compile(r"\bsk-(?:ant-|proj-|or-v1-|live-)?[A-Za-z0-9]{32,}\b")),
+    ("slack-token", re.compile(r"\bxox[baprs]-[0-9A-Za-z-]{12,}\b")),
+    ("cgnat-address", re.compile(r"\b100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}\b")),
 ]
+SKIP_SUFFIX = {".png",".jpg",".jpeg",".gif",".ico",".svg",".pdf",".whl",".pyc",".so",".dll",".exe",".lock",".bin",".gz",".zip",".tar",".woff",".woff2",".ttf",".otf"}
+SKIP_PARTS = {".git","node_modules","target","dist","build","__pycache__",".venv",".mypy_cache",".ruff_cache",".astro","vendor"}
 
-# Directories never worth scanning.
-SKIP_DIRS = {
-    ".git",
-    ".venv",
-    "venv",
-    "__pycache__",
-    ".mypy_cache",
-    ".ruff_cache",
-    ".pytest_cache",
-    "node_modules",
-    "dist",
-    "build",
-    ".eggs",
-}
+def tracked(root: Path):
+    try:
+        out = subprocess.run(["git","-C",str(root),"ls-files"],capture_output=True,text=True,check=True).stdout
+        return [root / ln for ln in out.splitlines() if ln]
+    except Exception:
+        return [p for p in root.rglob("*") if p.is_file()]
 
-# Only scan files that are plausibly text/source.
-TEXT_SUFFIXES = {
-    ".py",
-    ".pyi",
-    ".md",
-    ".txt",
-    ".toml",
-    ".cfg",
-    ".ini",
-    ".yaml",
-    ".yml",
-    ".json",
-    ".sh",
-    ".env",
-    ".gitignore",
-    ".gitkeep",
-    "",  # extensionless (LICENSE, etc.)
-}
-
-# This file itself defines the patterns above, so exclude it from the scan.
-SELF = Path(__file__).resolve()
-
-
-def iter_files(root: Path) -> Iterator[Path]:
-    """Yield candidate text files under ``root``, skipping noise dirs."""
-    for path in root.rglob("*"):
-        if not path.is_file():
-            continue
-        if any(part in SKIP_DIRS for part in path.parts):
-            continue
-        if path.suffix.lower() not in TEXT_SUFFIXES:
-            continue
-        if path.resolve() == SELF:
-            continue
-        yield path
-
-
-def scan(root: Path) -> list[tuple[Path, int, str, str]]:
-    """Return a list of (file, line_no, label, line_text) for every match."""
-    findings: list[tuple[Path, int, str, str]] = []
-    for path in iter_files(root):
-        try:
-            text = path.read_text(encoding="utf-8", errors="ignore")
-        except OSError:
-            continue
-        for lineno, line in enumerate(text.splitlines(), start=1):
-            for label, pattern in PATTERNS:
-                if pattern.search(line):
-                    findings.append((path, lineno, label, line.strip()))
-    return findings
-
-
-def main(argv: list[str]) -> int:
-    root = Path(argv[1]).resolve() if len(argv) > 1 else Path(__file__).resolve().parent.parent
-    findings = scan(root)
-    if not findings:
-        print("scrub_check: OK (no forbidden identifiers found)")
-        return 0
-    print("scrub_check: FAILED — forbidden identifiers found:", file=sys.stderr)
-    for path, lineno, label, line in findings:
-        rel = path.relative_to(root) if path.is_relative_to(root) else path
-        print(f"  {rel}:{lineno}: [{label}] {line}", file=sys.stderr)
-    return 1
-
+def main() -> int:
+    args = sys.argv[1:]
+    root = Path(args[args.index("--path")+1]).resolve() if "--path" in args else Path(".").resolve()
+    self_path = Path(__file__).resolve()
+    found = 0
+    for f in tracked(root):
+        if f.resolve() == self_path or f.suffix.lower() in SKIP_SUFFIX: continue
+        if any(part in SKIP_PARTS for part in f.parts) or "min." in f.name: continue
+        try: text = f.read_text(encoding="utf-8", errors="ignore")
+        except Exception: continue
+        for label, rx in PATTERNS:
+            for i, line in enumerate(text.splitlines(), 1):
+                if rx.search(line):
+                    print(f"SCRUB FAIL [{label}] {f}:{i}"); found += 1
+    if found:
+        print(f"scrub_check: FAILED - {found} match(es)."); return 1
+    print("scrub_check: OK - no secrets detected."); return 0
 
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv))
+    raise SystemExit(main())
